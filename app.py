@@ -79,12 +79,17 @@ def get_train_info(from_station, to_station):
         f"&hh={hour}&mm={minute}"
         f"&expkind=1" # 到着時刻が早い順
     )
+    print(f"DEBUG: Yahoo!乗換案内検索URL: {url}") # DEBUG: 検索URLを出力
 
     try:
         # ウェブサイトからHTMLを取得 (タイムアウト設定あり)
         response = requests.get(url, timeout=10)
         # HTTPステータスコードが200以外の場合、例外を発生させる
         response.raise_for_status()
+        
+        # DEBUG: 取得したHTMLの先頭部分を出力して確認
+        print(f"DEBUG: 取得したHTMLの先頭部分 (200文字): {response.text[:200]}...")
+        
         # BeautifulSoupでHTMLを解析
         soup = BeautifulSoup(response.text, 'html.parser')
 
@@ -92,6 +97,10 @@ def get_train_info(from_station, to_station):
         # HTML構造によりセレクタは異なる可能性があります。
         # 現在のYahoo!乗換案内では、各ルートの概要は 'div.routeSummary' で囲まれています。
         route_summary = soup.find('div', class_='routeSummary')
+        
+        # DEBUG: route_summaryが見つかったか確認
+        if not route_summary:
+            print("DEBUG: div.routeSummary が見つかりませんでした。HTML構造が変わった可能性があります。")
 
         if route_summary:
             # 出発時刻の抽出
@@ -99,24 +108,28 @@ def get_train_info(from_station, to_station):
             departure_time_element = route_summary.find('li', class_='routeDeparture')
             departure_time_str = departure_time_element.find('time', class_='time').text.strip() \
                                 if departure_time_element and departure_time_element.find('time', class_='time') else '不明'
+            print(f"DEBUG: departure_time_str: {departure_time_str}") # DEBUG
 
             # 到着時刻の抽出
             # 'li.routeArrival'内の'time.time'タグからテキストを取得
             arrival_time_element = route_summary.find('li', class_='routeArrival')
             arrival_time_str_raw = arrival_time_element.find('time', class_='time').text.strip() \
                                if arrival_time_element and arrival_time_element.find('time', class_='time') else '不明'
+            print(f"DEBUG: arrival_time_str_raw: {arrival_time_str_raw}") # DEBUG
             
             # 所要時間の抽出 (例: 所要時間 nn分)
             # 'li.routeDuration'内の'em'タグからテキストを取得
             duration_element = route_summary.find('li', class_='routeDuration')
             duration_str = duration_element.find('em').text.strip() \
                            if duration_element and duration_element.find('em') else '不明'
+            print(f"DEBUG: duration_str: {duration_str}") # DEBUG
 
             # 乗り換え回数の抽出
             # 'li.routeTransfer'内の'em'タグからテキストを取得
             transfer_count_element = route_summary.find('li', class_='routeTransfer')
             transfer_count_str = transfer_count_element.find('em').text.strip() \
                                  if transfer_count_element and transfer_count_element.find('em') else '不明'
+            print(f"DEBUG: transfer_count_str: {transfer_count_str}") # DEBUG
 
             # 翌日到着の判定と時刻のパース
             arrival_is_next_day = "翌日" in arrival_time_str_raw
@@ -136,9 +149,11 @@ def get_train_info(from_station, to_station):
                 # もし「翌日」と表示されていれば、日付を1日進める
                 if arrival_is_next_day:
                     arrival_datetime += timedelta(days=1)
+                print(f"DEBUG: Parsed arrival_datetime: {arrival_datetime}") # DEBUG
                 
-            except ValueError:
+            except ValueError as ve:
                 # 時刻のパースに失敗した場合
+                print(f"DEBUG: 時刻の解析エラー: {ve}, 試行した時刻文字列: '{arrival_time_clean}'")
                 return {"status": "error", "message": "時刻情報の解析に失敗しました。"}
 
             # 成功した場合は、必要な情報と計算用のdatetimeオブジェクトを辞書で返す
@@ -171,7 +186,7 @@ def handle_message(event):
 
     if user_text == "帰ります":
         # スクレイピング関数を呼び出し、JR茨木駅からJR西宮駅の情報を取得
-        train_info_result = get_train_info("茨木駅", "西宮駅")
+        train_info_result = get_train_info("JR茨木", "JR西宮")
         
         if train_info_result["status"] == "success":
             # 取得した電車の情報
@@ -196,8 +211,8 @@ def handle_message(event):
             # 返信メッセージを整形
             reply_text = (
                 f"現在の時刻から最も早いルートです。\n"
-                f"🚃出発：茨木駅 {departure_time_str}\n"
-                f"🚏到着：西宮駅 {arrival_time_str}\n"
+                f"🚃出発：JR茨木 {departure_time_str}\n"
+                f"🚏到着：JR西宮 {arrival_time_str}\n"
                 f"⏰所要時間：{duration_str}\n"
                 f"🔄乗り換え：{transfer_count_str}\n"
                 f"\n" # 区切り

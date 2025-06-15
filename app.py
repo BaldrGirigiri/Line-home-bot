@@ -40,8 +40,8 @@ def handle_message(event):
 
     if "帰ります" in text:
         # 駅名を適宜変更してください
-        from_station = "梅田"
-        to_station = "西宮北口"
+        from_station = "茨木"
+        to_station = "大阪"
         result = get_train_info(from_station, to_station)
 
         if result["status"] == "success":

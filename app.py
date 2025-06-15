@@ -11,13 +11,13 @@ import os
 load_dotenv()
 
 # 環境変数からLINEの設定を取得
-LINE_CHANNEL_ACCESS_TOKEN = os.getenv("071ZBMrKL5U+H4Mw5uOFLxv1JzHfeqB0mjjNF4n5Wc9EgFS6txTljqJOKdYyxoqf/xsIYTfdxMSmuE3OBXWOfwXUwbtbC/oNa+OlyZsBJybzDqGAOIb034WEF805vesvtOhAItwPyPIGnsSTFi1jGgdB04t89/1O/w1cDnyilFU=")
-LINE_CHANNEL_SECRET = os.getenv("44472bc7a7dc0b206b77cd2b8dac7e0b")
+LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
+LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
 
 # Flaskアプリの作成
 app = Flask(__name__)
-line_bot_api = LineBotApi(071ZBMrKL5U+H4Mw5uOFLxv1JzHfeqB0mjjNF4n5Wc9EgFS6txTljqJOKdYyxoqf/xsIYTfdxMSmuE3OBXWOfwXUwbtbC/oNa+OlyZsBJybzDqGAOIb034WEF805vesvtOhAItwPyPIGnsSTFi1jGgdB04t89/1O/w1cDnyilFU=)
-handler = WebhookHandler(44472bc7a7dc0b206b77cd2b8dac7e0b)
+line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
+handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
 # LINEのWebhookを受け取る部分
 @app.route("/callback", methods=["POST"])

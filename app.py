@@ -88,7 +88,7 @@ def get_train_info(from_station, to_station):
         response.raise_for_status()
         
         # DEBUG: 取得したHTMLの先頭部分を出力して確認
-        print(f"DEBUG: 取得したHTMLの先頭部分 (200文字): {response.text[:200]}...")
+        print(f"DEBUG: 取得したHTMLの先頭部分 (500文字): {response.text[:500]}...") # 文字数を増やしてより多く確認
         
         # BeautifulSoupでHTMLを解析
         soup = BeautifulSoup(response.text, 'html.parser')
@@ -101,6 +101,8 @@ def get_train_info(from_station, to_station):
         # DEBUG: route_summaryが見つかったか確認
         if not route_summary:
             print("DEBUG: div.routeSummary が見つかりませんでした。HTML構造が変わった可能性があります。")
+            # デバッグのために取得したHTML全体をログに出力することも検討 (大量になるので注意)
+            # print(f"DEBUG: Full HTML for inspection:\n{response.text}")
 
         if route_summary:
             # 出発時刻の抽出
@@ -108,6 +110,7 @@ def get_train_info(from_station, to_station):
             departure_time_element = route_summary.find('li', class_='routeDeparture')
             departure_time_str = departure_time_element.find('time', class_='time').text.strip() \
                                 if departure_time_element and departure_time_element.find('time', class_='time') else '不明'
+            print(f"DEBUG: departure_time_element found: {departure_time_element is not None}") # DEBUG
             print(f"DEBUG: departure_time_str: {departure_time_str}") # DEBUG
 
             # 到着時刻の抽出
@@ -115,6 +118,7 @@ def get_train_info(from_station, to_station):
             arrival_time_element = route_summary.find('li', class_='routeArrival')
             arrival_time_str_raw = arrival_time_element.find('time', class_='time').text.strip() \
                                if arrival_time_element and arrival_time_element.find('time', class_='time') else '不明'
+            print(f"DEBUG: arrival_time_element found: {arrival_time_element is not None}") # DEBUG
             print(f"DEBUG: arrival_time_str_raw: {arrival_time_str_raw}") # DEBUG
             
             # 所要時間の抽出 (例: 所要時間 nn分)
@@ -122,6 +126,7 @@ def get_train_info(from_station, to_station):
             duration_element = route_summary.find('li', class_='routeDuration')
             duration_str = duration_element.find('em').text.strip() \
                            if duration_element and duration_element.find('em') else '不明'
+            print(f"DEBUG: duration_element found: {duration_element is not None}") # DEBUG
             print(f"DEBUG: duration_str: {duration_str}") # DEBUG
 
             # 乗り換え回数の抽出
@@ -129,6 +134,7 @@ def get_train_info(from_station, to_station):
             transfer_count_element = route_summary.find('li', class_='routeTransfer')
             transfer_count_str = transfer_count_element.find('em').text.strip() \
                                  if transfer_count_element and transfer_count_element.find('em') else '不明'
+            print(f"DEBUG: transfer_count_element found: {transfer_count_element is not None}") # DEBUG
             print(f"DEBUG: transfer_count_str: {transfer_count_str}") # DEBUG
 
             # 翌日到着の判定と時刻のパース
@@ -186,7 +192,7 @@ def handle_message(event):
 
     if user_text == "帰ります":
         # スクレイピング関数を呼び出し、JR茨木駅からJR西宮駅の情報を取得
-        train_info_result = get_train_info("茨木駅", "西宮駅")
+        train_info_result = get_train_info("JR茨木", "JR西宮")
         
         if train_info_result["status"] == "success":
             # 取得した電車の情報
@@ -211,8 +217,8 @@ def handle_message(event):
             # 返信メッセージを整形
             reply_text = (
                 f"現在の時刻から最も早いルートです。\n"
-                f"🚃出発：茨木駅 {departure_time_str}\n"
-                f"🚏到着：西宮駅 {arrival_time_str}\n"
+                f"🚃出発：JR茨木 {departure_time_str}\n"
+                f"🚏到着：JR西宮 {arrival_time_str}\n"
                 f"⏰所要時間：{duration_str}\n"
                 f"🔄乗り換え：{transfer_count_str}\n"
                 f"\n" # 区切り
@@ -236,7 +242,6 @@ def handle_message(event):
 if __name__ == "__main__":
     # Renderから提供されるポートを取得。なければデフォルトで5000を使う（一般的）
     port = int(os.environ.get("PORT", 5000))
-    
 
     # ホストを'0.0.0.0'に設定して、外部からのアクセスを許可する
     app.run(host="0.0.0.0", port=port)

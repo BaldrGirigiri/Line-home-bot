@@ -61,20 +61,24 @@ def get_train_info(from_st, to_st):
     url = f"https://transit.yahoo.co.jp/search/result?from={quote(from_st)}&to={quote(to_st)}"
 
     try:
-        r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        r = requests.get(url, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+        }, timeout=10)
         r.raise_for_status()
     except Exception as e:
         return {"status": "error", "message": f"経路検索に失敗しました: {e}"}
 
     soup = BeautifulSoup(r.text, "html.parser")
-    all_text = soup.get_text()
 
-    times = re.findall(r'\b\d{1,2}:\d{2}\b', all_text)
-    if len(times) < 2:
-        return {"status": "error", "message": "時刻解析でエラーが発生しました（時刻が2つ未満）"}
+    # 出発・到着時刻をHTMLから直接取得
+    dep_el = soup.select_one("div.time span.time")
+    arr_el = soup.select("div.time span.time")
 
-    dep = times[0]
-    arr = times[-1]
+    if not dep_el or len(arr_el) < 2:
+        return {"status": "error", "message": "HTML構造から時刻を抽出できませんでした"}
+
+    dep = arr_el[0].get_text(strip=True)
+    arr = arr_el[-1].get_text(strip=True)
 
     line_info = ""
     try:

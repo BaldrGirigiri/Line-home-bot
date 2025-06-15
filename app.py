@@ -193,7 +193,7 @@ def handle_message(event):
 
     if user_text == "帰ります":
         # スクレイピング関数を呼び出し、JR茨木駅からJR西宮駅の情報を取得
-        train_info_result = get_train_info("JR茨木", "JR西宮")
+        train_info_result = get_train_info("茨木", "西宮(JR線)")
         
         if train_info_result["status"] == "success":
             # 取得した電車の情報
@@ -218,8 +218,8 @@ def handle_message(event):
             # 返信メッセージを整形
             reply_text = (
                 f"現在の時刻から最も早いルートです。\n"
-                f"🚃出発：JR茨木 {departure_time_str}\n"
-                f"🚏到着：JR西宮 {arrival_time_str}\n"
+                f"🚃出発：茨木 {departure_time_str}\n"
+                f"🚏到着：西宮(JR線) {arrival_time_str}\n"
                 f"⏰所要時間：{duration_str}\n"
                 f"🔄乗り換え：{transfer_count_str}\n"
                 f"\n" # 区切り

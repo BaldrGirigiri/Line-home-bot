@@ -50,4 +50,8 @@ def handle_message(event):
 
 # ローカルテスト用（Renderでは使わない）
 if __name__ == "__main__":
-    app.run(port=3000)
+    # Renderから提供されるポートを取得。なければデフォルトで5000を使う（一般的）
+    port = int(os.environ.get("PORT", 5000))
+
+    # ホストを'0.0.0.0'に設定して、外部からのアクセスを許可する
+    app.run(host="0.0.0.0", port=port)

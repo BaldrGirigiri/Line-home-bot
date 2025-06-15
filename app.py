@@ -117,7 +117,7 @@ def get_train_info(from_station, to_station):
             # 'li.routeArrival'内の'time.time'タグからテキストを取得
             arrival_time_element = route_summary.find('li', class_='routeArrival')
             arrival_time_str_raw = arrival_time_element.find('time', class_='time').text.strip() \
-                               if arrival_time_element and arrival_time_element.find('time', class_='time') else '不明`
+                               if arrival_time_element and arrival_time_element.find('time', class_='time') else '不明' # ここを修正
             print(f"DEBUG: arrival_time_element found: {arrival_time_element is not None}") # DEBUG
             print(f"DEBUG: arrival_time_str_raw: {arrival_time_str_raw}") # DEBUG
             

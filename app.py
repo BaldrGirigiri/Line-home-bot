@@ -30,22 +30,18 @@ def normalize_station_name(name):
     return name
 
 def get_train_info(from_st, to_st):
-    from_s = normalize_station_name(from_st)
-    to_s = normalize_station_name(to_st)
-    dep_enc = urllib.parse.quote(from_s)
-    arr_enc = urllib.parse.quote(to_s)
-
-    now = datetime.now()
-    dt = now
-    url = (f"https://transit.yahoo.co.jp/search/result?"
-           f"from={dep_enc}&to={arr_enc}"
-           f"&y={dt.year}&m={dt.month}&d={dt.day}"
-           f"&hh={dt.hour}&mm={dt.minute}&type=1&ticket=ic")
+    from urllib.parse import quote
+    url = f"https://transit.yahoo.co.jp/search/result?from={quote(from_st)}&to={quote(to_st)}"
 
     try:
         r = requests.get(url, headers=HEADERS, timeout=10)
         r.raise_for_status()
-    except Exception as ex:
+        
+        # ここでHTMLを保存
+        with open("yahoo_result.html", "w", encoding="utf-8") as f:
+            f.write(r.text)
+
+    except Exception:
         return {"status": "error", "message": "経路検索に失敗しました。"}
 
     soup = BeautifulSoup(r.text, "html.parser")

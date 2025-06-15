@@ -41,33 +41,35 @@ def get_train_info(from_st, to_st):
            f"from={dep_enc}&to={arr_enc}"
            f"&y={dt.year}&m={dt.month}&d={dt.day}"
            f"&hh={dt.hour}&mm={dt.minute}&type=1&ticket=ic")
-    print("DEBUG URL:", url)
 
     try:
         r = requests.get(url, headers=HEADERS, timeout=10)
         r.raise_for_status()
     except Exception as ex:
-        print("DEBUG HTTP error:", ex)
-        return {"status":"error", "message":"経路検索に失敗しました。後で再度お試しください。"}
+        return {"status": "error", "message": "経路検索に失敗しました。"}
 
     soup = BeautifulSoup(r.text, "html.parser")
     route = soup.select_one("div.routeSummary")
     if not route:
-        print("DEBUG: routeSummary not found")
-        return {"status":"error", "message":"指定区間の経路が見つかりませんでした。駅名をご確認ください。"}
+        return {"status": "error", "message": "経路情報が見つかりません。"}
 
     try:
-        dtimes = route.select("li > time")
+        # より安定したセレクタに変更
+        dtimes = route.select("ul.time li time")
+        if not dtimes or len(dtimes) < 2:
+            raise ValueError("時刻が2つ以上見つかりません")
+
         dep = dtimes[0].get_text(strip=True)
         arr = dtimes[-1].get_text(strip=True)
 
         info_li = soup.select_one("ol.routeDetail li.transport")
-        line_info = info_li.get_text(strip=True) if info_li else ""
+        line_info = info_li.get_text(strip=True) if info_li else "経路情報なし"
 
-        return {"status":"success", "dep":dep, "arr":arr, "line":line_info}
+        return {"status": "success", "dep": dep, "arr": arr, "line": line_info}
+
     except Exception as ex:
-        print("DEBUG parse error:", ex)
-        return {"status":"error", "message":"時刻解析でエラーが発生しました。"}
+        print("時刻抽出エラー:", ex)
+        return {"status": "error", "message": "時刻解析でエラーが発生しました。"}
 
 @app.route("/callback", methods=["POST"])
 def callback():

@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 import os
 import requests
 from bs4 import BeautifulSoup
-from datetime import datetime
+from datetime import datetime, timedelta # timedeltaを追加
 import urllib.parse # URLエンコード用
 
 # .envファイルの読み込み
@@ -54,7 +54,7 @@ def callback():
     return "OK", 200
 
 # 電車情報をスクレイピングして取得する関数
-# Yahoo!乗換案内からJR西宮駅とJR茨木駅間の情報を取得します。
+# Yahoo!乗換案内から指定された駅間の情報を取得します。
 # 注意: ウェブサイトのHTML構造は変更される可能性があるため、
 # その場合、この関数のセレクタを更新する必要があります。
 def get_train_info(from_station, to_station):
@@ -103,9 +103,9 @@ def get_train_info(from_station, to_station):
             # 到着時刻の抽出
             # 'li.routeArrival'内の'time.time'タグからテキストを取得
             arrival_time_element = route_summary.find('li', class_='routeArrival')
-            arrival_time_str = arrival_time_element.find('time', class_='time').text.strip() \
+            arrival_time_str_raw = arrival_time_element.find('time', class_='time').text.strip() \
                                if arrival_time_element and arrival_time_element.find('time', class_='time') else '不明'
-
+            
             # 所要時間の抽出 (例: 所要時間 nn分)
             # 'li.routeDuration'内の'em'タグからテキストを取得
             duration_element = route_summary.find('li', class_='routeDuration')
@@ -118,26 +118,50 @@ def get_train_info(from_station, to_station):
             transfer_count_str = transfer_count_element.find('em').text.strip() \
                                  if transfer_count_element and transfer_count_element.find('em') else '不明'
 
-            # 結果メッセージを整形して返す
-            return (
-                f"現在の時刻から最も早いルートです。\n"
-                f"🚃出発：{from_station} {departure_time_str}\n"
-                f"🚏到着：{to_station} {arrival_time_str}\n"
-                f"⏰所要時間：{duration_str}\n"
-                f"🔄乗り換え：{transfer_count_str}"
-            )
+            # 翌日到着の判定と時刻のパース
+            arrival_is_next_day = "翌日" in arrival_time_str_raw
+            
+            # '(翌日)' などの表記を取り除く
+            arrival_time_clean = arrival_time_str_raw.replace('(翌日)', '').strip()
+
+            try:
+                # 現在の年月日と取得した時分でdatetimeオブジェクトを作成
+                # これは到着時刻の計算に使用するため
+                current_date = now.date()
+                arrival_time_obj = datetime.strptime(arrival_time_clean, '%H:%M').time()
+                
+                # 到着日の決定
+                arrival_datetime = datetime.combine(current_date, arrival_time_obj)
+                
+                # もし「翌日」と表示されていれば、日付を1日進める
+                if arrival_is_next_day:
+                    arrival_datetime += timedelta(days=1)
+                
+            except ValueError:
+                # 時刻のパースに失敗した場合
+                return {"status": "error", "message": "時刻情報の解析に失敗しました。"}
+
+            # 成功した場合は、必要な情報と計算用のdatetimeオブジェクトを辞書で返す
+            return {
+                "status": "success",
+                "departure_time_str": departure_time_str,
+                "arrival_time_str": arrival_time_clean, # 計算用にクリーンな文字列
+                "arrival_datetime": arrival_datetime,   # 計算用（datetimeオブジェクト）
+                "duration_str": duration_str,
+                "transfer_count_str": transfer_count_str
+            }
         else:
             # 時刻表が見つからない場合
-            return "指定された区間の時刻表が見つかりませんでした。駅名が正しいか、運行状況をご確認ください。"
+            return {"status": "error", "message": "指定された区間の時刻表が見つかりませんでした。駅名が正しいか、運行状況をご確認ください。"}
 
     except requests.exceptions.RequestException as e:
         # HTTPリクエスト関連のエラー（ネットワーク、タイムアウトなど）
         print(f"スクレイピングエラー（リクエスト）: {e}")
-        return "電車の時刻表を確認中にエラーが発生しました。しばらくしてからもう一度お試しください。"
+        return {"status": "error", "message": "電車の時刻表を確認中にエラーが発生しました。しばらくしてからもう一度お試しください。"}
     except Exception as e:
         # その他のエラー（HTML解析失敗など）
         print(f"スクレイピングエラー（解析またはその他）: {e}")
-        return "時刻表の情報を取得できませんでした。サイトの構造が変更されたか、一時的な問題の可能性があります。"
+        return {"status": "error", "message": "時刻表の情報を取得できませんでした。サイトの構造が変更されたか、一時的な問題の可能性があります。" }
 
 
 # 受け取ったメッセージに応答する処理
@@ -146,11 +170,43 @@ def handle_message(event):
     user_text = event.message.text
 
     if user_text == "帰ります":
-        # スクレイピング関数を呼び出し、JR西宮駅とJR茨木駅の情報を取得
-        reply_text = get_train_info("JR西宮", "JR茨木")
+        # スクレイピング関数を呼び出し、JR茨木駅からJR西宮駅の情報を取得
+        train_info_result = get_train_info("茨木駅", "西宮駅")
         
-        # ユーザーに返信する前に、最初に「おかえりなさい！」のメッセージを付加
-        final_reply = f"おかえりなさい！\n{reply_text}"
+        if train_info_result["status"] == "success":
+            # 取得した電車の情報
+            departure_time_str = train_info_result["departure_time_str"]
+            arrival_time_str = train_info_result["arrival_time_str"] 
+            arrival_datetime = train_info_result["arrival_datetime"] # datetimeオブジェクト
+            duration_str = train_info_result["duration_str"]
+            transfer_count_str = train_info_result["transfer_count_str"]
+
+            # 西宮駅から自宅まで自転車で15分を加算
+            estimated_home_arrival_datetime = arrival_datetime + timedelta(minutes=15)
+            
+            # 自宅到着予定時刻の表示形式を決定
+            # 今日の日付と自宅到着予定時刻の日付を比較
+            if estimated_home_arrival_datetime.date() > datetime.now().date():
+                # 翌日になる場合
+                estimated_home_arrival_display = f"翌日 {estimated_home_arrival_datetime.strftime('%H:%M')}"
+            else:
+                # 同日の場合
+                estimated_home_arrival_display = estimated_home_arrival_datetime.strftime('%H:%M')
+
+            # 返信メッセージを整形
+            reply_text = (
+                f"現在の時刻から最も早いルートです。\n"
+                f"🚃出発：茨木駅 {departure_time_str}\n"
+                f"🚏到着：西宮駅 {arrival_time_str}\n"
+                f"⏰所要時間：{duration_str}\n"
+                f"🔄乗り換え：{transfer_count_str}\n"
+                f"\n" # 区切り
+                f"🚴‍♂️自宅到着予定時刻：{estimated_home_arrival_display}"
+            )
+            final_reply = f"おかえりなさい！\n{reply_text}"
+        else:
+            # エラーメッセージを返す
+            final_reply = f"おかえりなさい！\n{train_info_result['message']}"
     else:
         final_reply = f"「{user_text}」ですね！"
 
@@ -168,3 +224,4 @@ if __name__ == "__main__":
 
     # ホストを'0.0.0.0'に設定して、外部からのアクセスを許可する
     app.run(host="0.0.0.0", port=port)
+

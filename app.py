@@ -17,7 +17,7 @@ handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
 # 自宅情報
 NISHINOMIYA_STATION = "西宮駅"
-HOME_ADDRESS = "兵庫県西宮市高木西町8-8"  # 必要に応じて実際の住所に変更
+HOME_ADDRESS = "兵庫県西宮市高木西町8-8"  # 実際の住所に応じて変更
 
 @app.route("/callback", methods=['POST'])
 def callback():
@@ -41,26 +41,42 @@ def handle_location(event):
     user_lat = event.message.latitude
     user_lng = event.message.longitude
 
-    # ステップ①：現在地から西宮駅まで電車でのルート検索
-    train_url = "https://maps.googleapis.com/maps/api/directions/json"
+    # ステップ①：現在地から最寄り駅まで徒歩
+    params_walk = {
+        "origin": f"{user_lat},{user_lng}",
+        "destination": NISHINOMIYA_STATION,
+        "mode": "walking",
+        "language": "ja",
+        "key": GOOGLE_MAPS_API_KEY
+    }
+    walk_res = requests.get("https://maps.googleapis.com/maps/api/directions/json", params=params_walk).json()
+
+    if walk_res["status"] != "OK" or not walk_res.get("routes"):
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="徒歩ルートの取得に失敗しました。"))
+        return
+
+    duration_walk = walk_res["routes"][0]["legs"][0]["duration"]["text"]
+
+    # ステップ②：現在地から西宮駅まで電車（実際は徒歩の代用として処理）
     params_train = {
         "origin": f"{user_lat},{user_lng}",
         "destination": NISHINOMIYA_STATION,
         "mode": "transit",
         "transit_mode": "train",
         "language": "ja",
+        "departure_time": "now",
         "key": GOOGLE_MAPS_API_KEY
     }
-    train_res = requests.get(train_url, params=params_train).json()
+    train_res = requests.get("https://maps.googleapis.com/maps/api/directions/json", params=params_train).json()
 
     if train_res["status"] != "OK" or not train_res.get("routes"):
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text="電車ルートの取得に失敗しました。"))
         return
 
     arrival_time = train_res["routes"][0]["legs"][0]["arrival_time"]["text"]
-    summary_train = train_res["routes"][0]["legs"][0]["steps"]
+    duration_train = train_res["routes"][0]["legs"][0]["duration"]["text"]
 
-    # ステップ②：西宮駅から自宅まで自転車
+    # ステップ③：西宮駅から自宅まで自転車
     params_bike = {
         "origin": NISHINOMIYA_STATION,
         "destination": HOME_ADDRESS,
@@ -68,20 +84,24 @@ def handle_location(event):
         "language": "ja",
         "key": GOOGLE_MAPS_API_KEY
     }
-    bike_res = requests.get(train_url, params=params_bike).json()
+    bike_res = requests.get("https://maps.googleapis.com/maps/api/directions/json", params=params_bike).json()
 
     if bike_res["status"] != "OK" or not bike_res.get("routes"):
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="西宮駅から自宅までのルートが見つかりませんでした。"))
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="西宮駅から自宅までの自転車ルートが見つかりませんでした。"))
         return
 
     duration_bike = bike_res["routes"][0]["legs"][0]["duration"]["text"]
 
-    message = f"""🏡 帰宅ルート情報
+    message = f"""\U0001F3E0 帰宅ルート情報（3段階）
 
-1️⃣ 現在地 → 西宮駅（電車）
-　- 到着予定時刻：{arrival_time}
+1️⃣ 現在地 → 西宮駅（徒歩）
+　- 所要時間：約{duration_walk}
 
-2️⃣ 西宮駅 → 自宅（自転車）
+2️⃣ 西宮駅まで（電車）
+　- 所要時間：約{duration_train}
+　- 到着予定：{arrival_time}
+
+3️⃣ 西宮駅 → 自宅（自転車）
 　- 所要時間：約{duration_bike}
 
 お気をつけてお帰りください！"""

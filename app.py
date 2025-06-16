@@ -18,6 +18,7 @@ handler = WebhookHandler(LINE_CHANNEL_SECRET)
 # 自宅情報
 NISHINOMIYA_STATION = "西宮駅"
 HOME_ADDRESS = "兵庫県西宮市高木西町8-8"  # 実際の住所に応じて変更
+NISHINOMIYA_STATION_LATLNG = "34.7371,135.3416"
 
 @app.route("/callback", methods=['POST'])
 def callback():
@@ -57,20 +58,21 @@ def handle_location(event):
 
     duration_walk = walk_res["routes"][0]["legs"][0]["duration"]["text"]
 
-    # ステップ②：現在地から西宮駅まで電車（実際は徒歩の代用として処理）
-    params_train = {
-        "origin": f"{user_lat},{user_lng}",
-        "destination": NISHINOMIYA_STATION,
-        "mode": "transit",
-        "transit_mode": "train",
-        "language": "ja",
-        "departure_time": "now",
-        "key": GOOGLE_MAPS_API_KEY
-    }
-    train_res = requests.get("https://maps.googleapis.com/maps/api/directions/json", params=params_train).json()
+# 電車ルート取得用（駅名 → 緯度経度に修正）
+params_train = {
+    "origin": f"{user_lat},{user_lng}",
+    "destination": NISHINOMIYA_STATION_LATLNG,
+    "mode": "transit",
+    "transit_mode": "train",
+    "language": "ja",
+    "departure_time": "now",
+    "key": GOOGLE_MAPS_API_KEY
+}
+train_res = requests.get("https://maps.googleapis.com/maps/api/directions/json", params=params_train).json()
 
-    if train_res["status"] != "OK" or not train_res.get("routes"):
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="電車ルートの取得に失敗しました。"))
+if train_res.get("status") != "OK" or not train_res.get("routes"):
+    line_bot_api.reply_message(event.reply_token, TextSendMessage(text="電車ルートの取得に失敗しました。"))
+    return
         return
 
     arrival_time = train_res["routes"][0]["legs"][0]["arrival_time"]["text"]

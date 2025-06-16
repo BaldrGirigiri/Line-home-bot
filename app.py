@@ -1,19 +1,23 @@
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
-from linebot.models import MessageEvent, TextMessage, TextSendMessage
-import os, re, requests
-from bs4 import BeautifulSoup
-from urllib.parse import quote
+from linebot.models import MessageEvent, TextMessage, TextSendMessage, LocationMessage
+import requests
+import os
 
 app = Flask(__name__)
 
-# 環境変数からLINEのアクセストークンとチャネルシークレットを取得
-LINE_CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN')
-LINE_CHANNEL_SECRET = os.getenv('LINE_CHANNEL_SECRET')
+# 環境変数から読み込む（Renderにデプロイする場合はダッシュボードで設定）
+LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
+LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
+GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
+
+# 自宅情報
+NISHINOMIYA_STATION = "西宮駅"
+HOME_ADDRESS = "兵庫県西宮市（自宅の住所）"  # 必要に応じて実際の住所に変更
 
 @app.route("/callback", methods=['POST'])
 def callback():
@@ -24,67 +28,62 @@ def callback():
         handler.handle(body, signature)
     except InvalidSignatureError:
         abort(400)
-
     return 'OK'
 
 @handler.add(MessageEvent, message=TextMessage)
-def handle_message(event):
-    text = event.message.text.strip()
+def handle_text_message(event):
+    if event.message.text == "帰ります":
+        reply = "現在地を送ってください（位置情報を共有してください）"
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
 
-    if text == "帰ります":
-        result = get_train_info("西宮", "大阪")
-        if result["status"] == "success":
-            reply = f"次の電車：{result['dep']} → {result['arr']}\n路線：{result['line']}"
-        else:
-            reply = result["message"]
-    else:
-        reply = "「帰ります」と送ってください"
+@handler.add(MessageEvent, message=LocationMessage)
+def handle_location(event):
+    user_lat = event.message.latitude
+    user_lng = event.message.longitude
 
-    line_bot_api.reply_message(
-        event.reply_token,
-        TextSendMessage(text=reply)
-    )
-
-def get_train_info(from_st, to_st):
-    url = f"https://transit.yahoo.co.jp/search/result?from={quote(from_st)}&to={quote(to_st)}"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+    # ステップ①：現在地から西宮駅まで電車でのルート検索
+    train_url = "https://maps.googleapis.com/maps/api/directions/json"
+    params_train = {
+        "origin": f"{user_lat},{user_lng}",
+        "destination": NISHINOMIYA_STATION,
+        "mode": "transit",
+        "transit_mode": "train",
+        "language": "ja",
+        "key": GOOGLE_MAPS_API_KEY
     }
+    train_res = requests.get(train_url, params=params_train).json()
 
-    try:
-        r = requests.get(url, headers=headers, timeout=10)
-        r.raise_for_status()
-    except Exception as e:
-        return {"status": "error", "message": f"経路検索に失敗しました: {e}"}
+    if train_res["status"] != "OK" or not train_res.get("routes"):
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="電車ルートの取得に失敗しました。"))
+        return
 
-    # レスポンスHTMLを保存（Renderではログ代わり）
-    try:
-        with open("yahoo_result.html", "w", encoding="utf-8") as f:
-            f.write(r.text)
-    except Exception as e:
-        print(f"HTML保存エラー: {e}")
+    arrival_time = train_res["routes"][0]["legs"][0]["arrival_time"]["text"]
+    summary_train = train_res["routes"][0]["legs"][0]["steps"]
 
-    # 時刻を正規表現で抽出（例: 7:32, 18:45など）
-    times = re.findall(r'\d{1,2}:\d{2}', r.text)
-    if len(times) < 2:
-        return {"status": "error", "message": "時刻解析でエラーが発生しました（時刻が2つ未満）"}
-
-    dep, arr = times[0], times[-1]
-
-    # 路線情報を取得（HTMLパース）
-    try:
-        soup = BeautifulSoup(r.text, "html.parser")
-        line_el = soup.select_one("ol.routeDetail li.transport")
-        line_info = line_el.get_text(strip=True) if line_el else "路線情報未取得"
-    except Exception:
-        line_info = "路線情報取得でエラー"
-
-    return {
-        "status": "success",
-        "dep": dep,
-        "arr": arr,
-        "line": line_info
+    # ステップ②：西宮駅から自宅まで自転車
+    params_bike = {
+        "origin": NISHINOMIYA_STATION,
+        "destination": HOME_ADDRESS,
+        "mode": "bicycling",
+        "language": "ja",
+        "key": GOOGLE_MAPS_API_KEY
     }
+    bike_res = requests.get(train_url, params=params_bike).json()
 
-if __name__ == "__main__":
-    app.run()
+    if bike_res["status"] != "OK" or not bike_res.get("routes"):
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="西宮駅から自宅までのルートが見つかりませんでした。"))
+        return
+
+    duration_bike = bike_res["routes"][0]["legs"][0]["duration"]["text"]
+
+    message = f"""🏡 帰宅ルート情報
+
+1️⃣ 現在地 → 西宮駅（電車）
+　- 到着予定時刻：{arrival_time}
+
+2️⃣ 西宮駅 → 自宅（自転車）
+　- 所要時間：約{duration_bike}
+
+お気をつけてお帰りください！"""
+
+    line_bot_api.reply_message(event.reply_token, TextSendMessage(text=message))

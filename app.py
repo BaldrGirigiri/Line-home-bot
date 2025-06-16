@@ -73,7 +73,7 @@ train_res = requests.get("https://maps.googleapis.com/maps/api/directions/json",
 if train_res.get("status") != "OK" or not train_res.get("routes"):
     line_bot_api.reply_message(event.reply_token, TextSendMessage(text="電車ルートの取得に失敗しました。"))
     return
-        return
+return
 
     arrival_time = train_res["routes"][0]["legs"][0]["arrival_time"]["text"]
     duration_train = train_res["routes"][0]["legs"][0]["duration"]["text"]

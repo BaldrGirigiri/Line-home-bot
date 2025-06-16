@@ -17,7 +17,7 @@ handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
 # 自宅情報
 NISHINOMIYA_STATION = "西宮駅"
-HOME_ADDRESS = "兵庫県西宮市（自宅の住所）"  # 必要に応じて実際の住所に変更
+HOME_ADDRESS = "兵庫県西宮市高木西町8-8"  # 必要に応じて実際の住所に変更
 
 @app.route("/callback", methods=['POST'])
 def callback():

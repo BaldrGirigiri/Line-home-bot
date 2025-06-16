@@ -87,3 +87,7 @@ def handle_location(event):
 お気をつけてお帰りください！"""
 
     line_bot_api.reply_message(event.reply_token, TextSendMessage(text=message))
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)

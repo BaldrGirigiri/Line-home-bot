@@ -2,24 +2,23 @@ from flask import Flask, request, abort
 import requests
 import os
 
+# linebot ライブラリの読み込み（Render上で有効、ローカルではダミー定義）
 try:
     from linebot import LineBotApi, WebhookHandler
     from linebot.exceptions import InvalidSignatureError
     from linebot.models import MessageEvent, TextMessage, TextSendMessage, LocationMessage
 except ModuleNotFoundError:
-    print("[警告] linebot ライブラリが見つかりません。")
-
+    print("[警告] linebot ライブラリが見つかりません。ローカルでのテストには注意してください。")
     class Dummy:
         def __getattr__(self, name):
             return lambda *args, **kwargs: None
-
     LineBotApi = WebhookHandler = Dummy
     InvalidSignatureError = Exception
     MessageEvent = TextMessage = TextSendMessage = LocationMessage = object
 
 app = Flask(__name__)
 
-# 環境変数（Renderダッシュボードで設定）
+# 環境変数から読み込み（Render のダッシュボードで設定）
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "test_token")
 LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET", "test_secret")
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "test_api_key")
@@ -27,9 +26,10 @@ GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "test_api_key")
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
-# 自宅・駅の情報
-NISHINOMIYA_STATION_LATLNG = (34.7365, 135.3419)  # 西宮駅の緯度・経度
-HOME_ADDRESS = "兵庫県西宮市高木西町8-8"         # 自宅住所
+# 自宅情報
+HOME_ADDRESS = "兵庫県西宮市高木西町8-8"  # 必要に応じて変更
+STATION_LAT = 34.736082   # 西宮駅の緯度
+STATION_LNG = 135.341650  # 西宮駅の経度
 
 @app.route("/callback", methods=['POST'])
 def callback():
@@ -43,23 +43,20 @@ def callback():
     return 'OK'
 
 @handler.add(MessageEvent, message=TextMessage)
-def handle_text(event):
+def handle_text_message(event):
     if event.message.text == "帰ります":
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text="現在地の位置情報を送ってください（LINEの＋ボタン→位置情報）")
-        )
+        reply = "現在地を送ってください（位置情報を共有してください）"
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
 
 @handler.add(MessageEvent, message=LocationMessage)
 def handle_location(event):
     user_lat = event.message.latitude
     user_lng = event.message.longitude
-    station_lat, station_lng = NISHINOMIYA_STATION_LATLNG
 
-    # ① 現在地 → 西宮駅（徒歩）
+    # ステップ①：現在地→西宮駅（徒歩）
     params_walk = {
         "origin": f"{user_lat},{user_lng}",
-        "destination": f"{station_lat},{station_lng}",
+        "destination": f"{STATION_LAT},{STATION_LNG}",
         "mode": "walking",
         "language": "ja",
         "key": GOOGLE_MAPS_API_KEY
@@ -69,30 +66,39 @@ def handle_location(event):
     if walk_res.get("status") != "OK" or not walk_res.get("routes"):
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text="徒歩ルートの取得に失敗しました。"))
         return
+
     duration_walk = walk_res["routes"][0]["legs"][0]["duration"]["text"]
 
-    # ② 現在地 → 西宮駅（電車）
+    # ステップ②：現在地→西宮駅（電車）
     params_train = {
         "origin": f"{user_lat},{user_lng}",
-        "destination": f"{station_lat},{station_lng}",
+        "destination": f"{STATION_LAT},{STATION_LNG}",
         "mode": "transit",
         "transit_mode": "train",
-        "departure_time": "now",
         "language": "ja",
+        "departure_time": "now",
         "key": GOOGLE_MAPS_API_KEY
     }
     train_res = requests.get("https://maps.googleapis.com/maps/api/directions/json", params=params_train).json()
 
     if train_res.get("status") != "OK" or not train_res.get("routes"):
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="電車ルートの取得に失敗しました。"))
+        error_status = train_res.get("status", "不明")
+        error_message = train_res.get("error_message", "")
+        debug_info = f"[デバッグ情報]\nstatus: {error_status}\nmessage: {error_message}"
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text=f"電車ルートの取得に失敗しました。\n{debug_info}")
+        )
+        print("Google Maps Transit API エラー:", train_res)
         return
-    leg_train = train_res["routes"][0]["legs"][0]
-    duration_train = leg_train["duration"]["text"]
-    arrival_time = leg_train.get("arrival_time", {}).get("text", "不明")
 
-    # ③ 西宮駅 → 自宅（自転車）
+    leg_train = train_res["routes"][0]["legs"][0]
+    arrival_time = leg_train.get("arrival_time", {}).get("text", "不明")
+    duration_train = leg_train["duration"]["text"]
+
+    # ステップ③：西宮駅→自宅（自転車）
     params_bike = {
-        "origin": f"{station_lat},{station_lng}",
+        "origin": f"{STATION_LAT},{STATION_LNG}",
         "destination": HOME_ADDRESS,
         "mode": "bicycling",
         "language": "ja",
@@ -101,10 +107,12 @@ def handle_location(event):
     bike_res = requests.get("https://maps.googleapis.com/maps/api/directions/json", params=params_bike).json()
 
     if bike_res.get("status") != "OK" or not bike_res.get("routes"):
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="自転車ルートの取得に失敗しました。"))
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text="西宮駅から自宅までの自転車ルートが見つかりませんでした。"))
         return
+
     duration_bike = bike_res["routes"][0]["legs"][0]["duration"]["text"]
 
+    # 結果をまとめて返信
     message = f"""\U0001F3E0 帰宅ルート情報（3段階）
 
 1️⃣ 現在地 → 西宮駅（徒歩）
